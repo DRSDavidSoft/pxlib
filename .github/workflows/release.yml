@@ -1,0 +1,220 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., v0.6.9)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Check version consistency
+      run: |
+        chmod +x scripts/check-version.sh
+        ./scripts/check-version.sh
+    
+    - name: Verify tag matches VERSION file
+      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      run: |
+        TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+        FILE_VERSION=$(cat VERSION | tr -d '[:space:]')
+        
+        if [ "$TAG_VERSION" != "$FILE_VERSION" ]; then
+          echo "ERROR: Tag version ($TAG_VERSION) does not match VERSION file ($FILE_VERSION)"
+          exit 1
+        fi
+        
+        echo "✓ Tag version matches VERSION file: $TAG_VERSION"
+
+  build-linux:
+    needs: check-version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+    
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y cmake build-essential
+    
+    - name: Configure CMake (GCC)
+      if: matrix.compiler == 'gcc'
+      run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+    
+    - name: Configure CMake (Clang)
+      if: matrix.compiler == 'clang'
+      run: CC=clang CXX=clang++ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+    
+    - name: Build
+      run: cmake --build build --config Release
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v6
+      with:
+        name: pxlib-linux-${{ matrix.compiler }}
+        path: build/libpxlib.*
+        retention-days: 1
+
+  build-windows:
+    needs: check-version
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v2
+    
+    - name: Configure CMake
+      run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+    
+    - name: Build
+      run: cmake --build build --config Release
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v6
+      with:
+        name: pxlib-windows
+        path: |
+          build/Release/*.dll
+          build/*.dll
+        retention-days: 1
+        if-no-files-found: warn
+
+  build-macos:
+    needs: check-version
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Install dependencies
+      run: |
+        brew install cmake
+    
+    - name: Configure CMake
+      run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+    
+    - name: Build
+      run: cmake --build build --config Release
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v6
+      with:
+        name: pxlib-macos
+        path: build/libpxlib.*
+        retention-days: 1
+
+  create-release:
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v6
+      with:
+        path: artifacts
+    
+    - name: Display structure of downloaded files
+      run: ls -R artifacts
+    
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Get the current tag
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          CURRENT_TAG="${{ github.event.inputs.tag }}"
+        else
+          CURRENT_TAG="${{ github.ref_name }}"
+        fi
+        
+        # Get the previous tag
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${CURRENT_TAG}^ 2>/dev/null || echo "")
+        
+        echo "current_tag=${CURRENT_TAG}" >> $GITHUB_OUTPUT
+        
+        # Generate changelog
+        if [ -z "$PREVIOUS_TAG" ]; then
+          echo "## Changes" > changelog.md
+          echo "" >> changelog.md
+          echo "Initial release" >> changelog.md
+          git log --pretty=format:"- %s (%h)" >> changelog.md
+        else
+          echo "## Changes since ${PREVIOUS_TAG}" > changelog.md
+          echo "" >> changelog.md
+          git log ${PREVIOUS_TAG}..${CURRENT_TAG} --pretty=format:"- %s (%h)" >> changelog.md
+        fi
+        
+        echo "" >> changelog.md
+        echo "" >> changelog.md
+        echo "## Build Information" >> changelog.md
+        echo "" >> changelog.md
+        echo "- Build date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> changelog.md
+        echo "- Commit: ${{ github.sha }}" >> changelog.md
+        
+        cat changelog.md
+    
+    - name: Prepare release assets
+      run: |
+        mkdir -p release-assets
+        
+        # Package Linux GCC build
+        if [ -d "artifacts/pxlib-linux-gcc" ]; then
+          cd artifacts/pxlib-linux-gcc
+          tar czf ../../release-assets/pxlib-linux-gcc.tar.gz libpxlib.*
+          cd ../..
+        fi
+        
+        # Package Linux Clang build
+        if [ -d "artifacts/pxlib-linux-clang" ]; then
+          cd artifacts/pxlib-linux-clang
+          tar czf ../../release-assets/pxlib-linux-clang.tar.gz libpxlib.*
+          cd ../..
+        fi
+        
+        # Package Windows build
+        if [ -d "artifacts/pxlib-windows" ]; then
+          cd artifacts/pxlib-windows
+          zip -r ../../release-assets/pxlib-windows.zip *.dll
+          cd ../..
+        fi
+        
+        # Package macOS build
+        if [ -d "artifacts/pxlib-macos" ]; then
+          cd artifacts/pxlib-macos
+          tar czf ../../release-assets/pxlib-macos.tar.gz libpxlib.*
+          cd ../..
+        fi
+        
+        ls -lh release-assets/
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.changelog.outputs.current_tag }}
+        name: Release ${{ steps.changelog.outputs.current_tag }}
+        body_path: changelog.md
+        draft: false
+        prerelease: false
+        files: |
+          release-assets/*
+        fail_on_unmatched_files: true
