@@ -45,16 +45,6 @@ Run the version check script to ensure all versions are in sync:
 
 This check is also run automatically in CI/CD and will fail the build if versions don't match.
 
-### 2. Verify Version Consistency
-
-Run the version check script to ensure all versions are in sync:
-
-```bash
-./scripts/check-version.sh
-```
-
-This check is also run automatically in CI/CD and will fail the build if versions don't match.
-
 ### 3. Update ChangeLog
 
 Add a new entry to the `ChangeLog` file describing the changes in this release.
