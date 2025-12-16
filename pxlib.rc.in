@@ -1,4 +1,4 @@
-#include <windows.h>
+#include <winver.h>
 
 #define PXLIB_MAJOR_VERSION @PXLIB_MAJOR_VERSION@
 #define PXLIB_MINOR_VERSION @PXLIB_MINOR_VERSION@
