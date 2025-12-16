@@ -12,12 +12,50 @@ This document describes how to create a new release of pxlib.
 
 ### 1. Update Version Numbers
 
-Update the version number in the following files:
+**Automated Method (Recommended):**
 
+Use the version update script to automatically update all version numbers:
+
+```bash
+./scripts/update-version.sh X.Y.Z
+```
+
+This script will update:
+- `VERSION` file (canonical version)
+- `CMakeLists.txt` (MAJOR, MINOR, MICRO version variables)
+- `configure.ac` (AC_INIT and version variables)
+
+**Manual Method (Not Recommended):**
+
+If you prefer to update manually, edit the following files:
+
+- `VERSION`: Set the version to `X.Y.Z`
 - `CMakeLists.txt`: Update `PXLIB_MAJOR_VERSION`, `PXLIB_MINOR_VERSION`, and `PXLIB_MICRO_VERSION`
-- `configure.ac`: Update `AC_INIT` version parameter
+- `configure.ac`: Update `AC_INIT` version parameter and individual version variables
 
-### 2. Update ChangeLog
+**Note:** The build and release workflows will fail if version numbers are inconsistent across these files.
+
+### 2. Verify Version Consistency
+
+Run the version check script to ensure all versions are in sync:
+
+```bash
+./scripts/check-version.sh
+```
+
+This check is also run automatically in CI/CD and will fail the build if versions don't match.
+
+### 2. Verify Version Consistency
+
+Run the version check script to ensure all versions are in sync:
+
+```bash
+./scripts/check-version.sh
+```
+
+This check is also run automatically in CI/CD and will fail the build if versions don't match.
+
+### 3. Update ChangeLog
 
 Add a new entry to the `ChangeLog` file describing the changes in this release.
 
@@ -29,15 +67,15 @@ Version X.Y.Z
     - Improvement: Enhanced performance of...
 ```
 
-### 3. Commit and Push Changes
+### 4. Commit and Push Changes
 
 ```bash
-git add CMakeLists.txt configure.ac ChangeLog
+git add VERSION CMakeLists.txt configure.ac ChangeLog
 git commit -m "Release version X.Y.Z"
 git push origin master
 ```
 
-### 4. Create and Push Tag
+### 5. Create and Push Tag
 
 Create a git tag with the version number (must start with 'v'):
 
@@ -46,19 +84,25 @@ git tag -a vX.Y.Z -m "Release version X.Y.Z"
 git push origin vX.Y.Z
 ```
 
-### 5. Automated Release
+### 6. Automated Release
 
 Once the tag is pushed, GitHub Actions will automatically:
 
-1. Build binaries for Linux (GCC and Clang), Windows, and macOS
-2. Generate a changelog from git commit history
-3. Create a GitHub Release
-4. Upload build artifacts to the release
+1. **Verify version consistency** across all project files
+2. **Verify tag matches VERSION file** (tag vX.Y.Z must match VERSION file X.Y.Z)
+3. Build binaries for Linux (GCC and Clang), Windows, and macOS
+4. Generate a changelog from git commit history
+5. Create a GitHub Release
+6. Upload build artifacts to the release
+
+**Important:** The release workflow will fail if:
+- Version numbers are inconsistent across files
+- The git tag version doesn't match the VERSION file
 
 The release workflow can be monitored at:
 https://github.com/DRSDavidSoft/pxlib/actions/workflows/release.yml
 
-### 6. Verify Release
+### 7. Verify Release
 
 After the workflow completes:
 
@@ -98,6 +142,33 @@ pxlib follows semantic versioning (MAJOR.MINOR.MICRO):
 - **MAJOR**: Incompatible API changes
 - **MINOR**: Backwards-compatible functionality additions
 - **MICRO**: Backwards-compatible bug fixes
+
+## Version Management Scripts
+
+### check-version.sh
+
+Validates that version numbers are consistent across all project files:
+- `VERSION` file
+- `CMakeLists.txt`
+- `configure.ac`
+
+Usage:
+```bash
+./scripts/check-version.sh
+```
+
+Exit code 0 if all versions match, 1 if inconsistencies are found.
+
+### update-version.sh
+
+Automatically updates version numbers in all project files:
+
+Usage:
+```bash
+./scripts/update-version.sh X.Y.Z
+```
+
+This ensures version consistency and eliminates manual update errors.
 
 ## Troubleshooting
 

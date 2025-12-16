@@ -15,7 +15,32 @@ permissions:
   contents: write
 
 jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Check version consistency
+      run: |
+        chmod +x scripts/check-version.sh
+        ./scripts/check-version.sh
+    
+    - name: Verify tag matches VERSION file
+      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      run: |
+        TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+        FILE_VERSION=$(cat VERSION | tr -d '[:space:]')
+        
+        if [ "$TAG_VERSION" != "$FILE_VERSION" ]; then
+          echo "ERROR: Tag version ($TAG_VERSION) does not match VERSION file ($FILE_VERSION)"
+          exit 1
+        fi
+        
+        echo "✓ Tag version matches VERSION file: $TAG_VERSION"
+
   build-linux:
+    needs: check-version
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -46,6 +71,7 @@ jobs:
         retention-days: 1
 
   build-windows:
+    needs: check-version
     runs-on: windows-latest
     
     steps:
@@ -71,6 +97,7 @@ jobs:
         if-no-files-found: warn
 
   build-macos:
+    needs: check-version
     runs-on: macos-latest
     
     steps:
